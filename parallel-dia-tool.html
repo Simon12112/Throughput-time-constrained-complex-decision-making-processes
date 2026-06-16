@@ -184,7 +184,7 @@ const TAU = [5, 6, 6, 5];
 const VALS = [0, 1, 2, 3];
 const NVALS = 4;
 const PROB = [0.25, 0.25, 0.25, 0.25]; // uniform
-const F_DECISIONS = [100, 600, -100, -600];
+const F_DECISIONS = [600, -600];
 const T_MAX = 14;
 const GAMMA = 1;
 
@@ -475,17 +475,48 @@ function getActions() {
 function executeAction(action) {
   stepCount++;
   if (action.type === 'final') {
-    const er = expectedReward(gameState, action.f);
-    const profit = er - gameCost;
+    // Realize all unknown/pending attributes (no cost charged)
+    const realized = new Array(N);
+    const drawn = [];
+    for (let i = 0; i < N; i++) {
+      if (isKnown(gameState[i], i)) {
+        realized[i] = knownVal(gameState[i], i);
+      } else {
+        // Draw a random value for unknown or pending attributes
+        const val = VALS[Math.floor(Math.random() * NVALS)];
+        realized[i] = val;
+        const wasStatus = isPending(gameState[i], i) ? 'pending' : 'unknown';
+        drawn.push({ attr: i, val: val, was: wasStatus });
+        // Update state visually (no cost added)
+        gameState[i] = toKnown(val, i);
+      }
+    }
+
+    const actualReward = rewardFull(realized[0], realized[1], realized[2], realized[3], action.f);
+    const profit = actualReward - gameCost;
     gameEnded = true;
-    gameLog.push('<span class="step">Step ' + stepCount + ':</span> Final decision f=' + action.f + '. Expected profit: ' + profit.toFixed(2));
+
+    // Log the realized values
+    if (drawn.length > 0) {
+      gameLog.push('<span class="step">Step ' + stepCount + ':</span> Final decision f=' + action.f + '. Realizing ' + drawn.length + ' unknown attribute' + (drawn.length > 1 ? 's' : '') + ':');
+      for (const d of drawn) {
+        gameLog.push('&nbsp;&nbsp;&rarr; X' + (d.attr+1) + ' (' + d.was + ') realized as <strong>' + d.val + '</strong> (no cost)');
+      }
+    } else {
+      gameLog.push('<span class="step">Step ' + stepCount + ':</span> Final decision f=' + action.f + ' (all attributes were known)');
+    }
+    gameLog.push('&nbsp;&nbsp;Reward: r<sub>f</sub> = (' + realized[0] + ' + 2&times;' + realized[1] + ' + 3&times;' + realized[2] + ' &minus; 2&times;' + realized[3] + ') &times; ' + action.f + ' = ' + actualReward.toFixed(2));
+    gameLog.push('&nbsp;&nbsp;Profit: ' + actualReward.toFixed(2) + ' &minus; ' + gameCost.toFixed(0) + ' = <strong>' + profit.toFixed(2) + '</strong>');
+
     document.getElementById('profitBox').classList.add('show');
     document.getElementById('profitVal').textContent = profit.toFixed(2);
+
     // Show end overlay
     const el = document.getElementById('endProfit');
     el.textContent = profit.toFixed(2);
     el.className = 'final-profit' + (profit < 0 ? ' negative' : '');
-    document.getElementById('endMsg').textContent = 'Decision: f=' + action.f + ' | Cost incurred: ' + gameCost.toFixed(0) + ' | Time used: ' + (T_MAX - gameTime);
+    const attrSummary = realized.map((v, i) => 'X' + (i+1) + '=' + v).join(', ');
+    document.getElementById('endMsg').innerHTML = 'Decision: f=' + action.f + '<br>Realized attributes: ' + attrSummary + '<br>Reward: ' + actualReward.toFixed(2) + ' | Cost: ' + gameCost.toFixed(0) + ' | Time used: ' + (T_MAX - gameTime);
     document.getElementById('endOverlay').classList.add('show');
     render();
     return;
